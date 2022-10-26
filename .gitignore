@@ -2,3 +2,4 @@
 keccak.c
 res.hash
 sha3.py
+*cache*

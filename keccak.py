@@ -1,3 +1,18 @@
+# Copyright (c) 2022 SALLIOT Mathieu <mathieu.salliot@epita.fr>
+
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+
 import sys
 from bitstring import BitArray
 import os
@@ -153,9 +168,7 @@ def ret_res(matrix):
     return res
 
 
-def keccak_256(file):
-    with open(file, 'r') as f:
-        data = f.read()
+def keccak_256(data):
 
     matrix = init_matrix(data)
 
@@ -183,4 +196,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     file = sys.argv[1]
-    print(keccak_256(file))
+    with open(file, 'r') as f:
+        data = f.read()
+
+    print(keccak_256(data))
