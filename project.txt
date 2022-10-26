@@ -1,0 +1,107 @@
+Implémentation de Keccak/SHA-3
+------------------------------
+
+Modalités
+=========
+
+- projet en binôme, au plus.
+- vous connaissez votre deadline (légale) de rendu, vu qu'après vous retournez
+en entreprise.
+
+Format du rendu:
+- email à mon adresse (tout finit sur espie@nerim.net si vous voulez éviter
+les redirections).  Merci de mettre la balise [CRYPTO] dans l'objet.
+- en PJ, votre travail, sous forme d'archive .tgz (tar compresse avec gzip)
+contenant:
+* votre code, soit sous forme de diff sur libressl, soit sous forme de 
+programme self-contained, avec un Makefile pour le compiler. Les langages 
+python, rust, C, C++, assembleur intel x64 sont admissibles. 
+Pour autre chose: me demander.
+* un bref rapport s'il y a des choses en plus à dire.
+
+Sujet
+=====
+Il s'agit de réaliser une implémentation de la famille de hash "keccak",
+normalisée sous le nom SHA-3. Pour une implémentation self-standing, on
+attend au minimum un programme qui prenne les données à hasher sur son
+entrée-standard et donne un hash hexadecimal sur la sortie standard, e.g.,
+$ mysha3 <file
+fffffeb.... 
+(ou whatever la valeur de hash)
+
+Vous pouvez vous inspirer de ce qui est donnée par l'équipe de Keccak, mais
+je vérifierai si vous avez piqué du code quelque part, et google est assez
+redoutable pour cela.
+
+Le plus
+=======
+Si vous voulez pleinement participer au projet, il s'agit de faire un diff
+pour libressl, qui ne peut réutiliser le code d'openssl pour des raisons de
+licence... donc si vous prenez du code qui est sous autre chose qu'une licence
+BSD 2 clauses/ISC, ça ne sera de toutes façons jamais admissible.
+
+Merci de rajouter une licence en tête de chaque fichier:
+
+----------------------------------------
+
+Below is an example license to be used for new code in OpenBSD,
+modeled after the ISC license.
+
+It is important to specify the year of the copyright.  Additional years
+should be separated by a comma, e.g.
+    Copyright (c) 2003, 2004
+
+If you add extra text to the body of the license, be careful not to
+add further restrictions.
+
+/*
+ * Copyright (c) YYYY YOUR NAME HERE <user@your.dom.ain>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+---------------------------------------------------------------
+
+Comme dit en cours, le format de développement de libressl consiste en
+- un arbre source intégré dans OpenBSD
+- le code de "glue" qui permet de le compiler ailleurs.
+
+Vous pouvez soit faire un diff depuis le master des 2 repositories 
+(clone github + diff) ou bien vous pouvez bêtement récupérer la dernière 
+release de libressl et travailler sur celle-ci.
+
+Bien évidemment, essayez de suivre style(9):
+https://man.openbsd.org/style
+
+En cours, j'ai été quelque peu évasif sur la différence entre Keccak et
+SHA-3. En fait, les fonctions de hash modernes ont également été prévues pour
+pouvoir faire du HMAC et autres.  Je vous invite à jeter un oeil au livre
+de Jean-Philippe Aumasson "Serious cryptography", qui explique l'utilisation
+d'un hash comme keccak dans ce contexte. Typiquement la possibilité de
+changer certains paramètres simplement pour l'authentification.
+
+
+
+Évaluation
+==========
+J'ai rajouté la partie libressl/conditions réelles pour le fun, si vous
+avez envie que ce cours soit un challenge. Si vous voulez vous contenter
+d'implémenter keccak, pourquoi pas. Je noterai la correction de 
+l'implémentation et la lisibilité du code. En premier lieu, il s'agit de
+calculer le bon résultat. En second lieu, si vous avez envie d'optimiser
+un peu le code c'est encore mieux (y compris en assembleur x86 64 bits)
+
+Questions
+=========
+De préférence sur le tchat du cours teams en public. Il y a de bonnes
+chances que vous soyez plusieurs à avoir les mêmes questions
