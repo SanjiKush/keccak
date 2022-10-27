@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) 2022 SALLIOT Mathieu <mathieu.salliot@epita.fr>
 
 # Permission to use, copy, modify, and distribute this software for any
@@ -36,8 +38,14 @@ KeccakF1600RoundConstants = [
     0x800000008000000A, 0x000000000000008A, 0x8000000080008081,
     0x0000000000000088, 0x8000000000008080, 0x0000000080008009,
     0x0000000080000001, 0x000000008000000A, 0x8000000080008008]
+
 # Une fois toutes les permutations effectuées, l’empreinte résultat est constituée des n premiers bits de l’état.
 size = 64
+# Capacity
+c = 512
+
+# Block Size
+r = 1600 - c
 
 
 def parity(n):
@@ -67,7 +75,25 @@ def routine_teta(matrix):
                 temp = C + D + matrix[i][j][k] % 2
                 matrix[i][j][k] = temp
 
+    print(matrix)
     return matrix
+
+
+# def theta(array, w=64):
+#     # For each column, XOR the parity of two adjacent columns
+#     array_prime = array.copy()
+#     C, D = np.zeros([5, w], dtype=int), np.zeros([5, w], dtype=int)
+#     for x in range(5):
+#         for y in range(5):
+#             # C[x] is a lane, each entry represents the column parity
+#             C[x] ^= array[x][y]
+#     for x in range(5):
+#         D[x] = C[(x-1) % 5] ^ np.roll(C[(x+1) % 5], 1)  # D[x] is a placeholder
+#     for x in range(5):
+#         for y in range(5):
+#             array_prime[x][y] ^= D[x]  # For each lane, XOR the value of D[x]
+#     # print(array_prime)
+#     return array_prime
 
 
 def routine_rho(matrix):
@@ -119,43 +145,65 @@ def routine_iota(matrix, rounds):
     return matrix
 
 
-def translateToBits(message):
-    charcodes = [ord(c) for c in message]
-    bytes = []
-    for char in charcodes:
-        bytes.append(bin(char)[2:].zfill(8))
-    bits = []
-    for byte in bytes:
-        for bit in byte:
-            bits.append(int(bit))
-    while (len(bits) != 1600):
-        bits.append(0)
-    return bits
+def translateToBits(text):
+    array = list(text)
+    bitarray = []
+    for char in array:
+        bits = bin(ord(char))[2:].zfill(8)
+        bits = bits[::-1]  # Convert to Little-endian
+        for bit in bits:
+            bitarray.append(int(bit))
+
+    res = ''.join([str(x) for x in bitarray])
+    res += '01100000'  # SHA3 Suffix
+    return res
+
+
+def padding(text):
+    """
+    To ensure the message can be evenly divided into r-bit blocks, padding is required. 
+    SHA-3 uses the pattern 10*1 in its padding function: 
+    a 1 bit, followed by zero or more 0 bits (maximum r − 1) and a final 1 bit. 
+    """
+    # Convert to bits
+    bitstr = translateToBits(text)
+
+    while len(bitstr) % (r-1) != 0:
+        bitstr += '0'
+    # Add 1
+    bitstr += '1'
+
+    return bitstr
+
+
+def init_matrix(input):
+    """
+    L’état interne de cette fonction sera vu comme une matrice de dimension 5×5×w.
+    a[i][j][k] sera le bit (i∗5+j)∗w+k de l’entrée. 
+    Le calcul des indices est effectué modulo 5 pour les deux premières dimensions, et modulo w pour la troisième
+    """
+
+    bit_str = padding(input)
+
+    state_array = np.zeros([5, 5, w], dtype=int)
+    for x in range(5):
+        for y in range(5):
+            for z in range(w):
+                if (w*(5*x+y)+z) < len(bit_str):
+                    state_array[y][x][z] = int(bit_str[w*(5*x+y)+z])
+
+    state = np.zeros(1600, dtype=int).reshape(n, n, w)
+    state = np.bitwise_xor(state, state_array)
+
+    return state
 
 
 def translateFromBits(bits):
     copy = [bit.replace('9223372039002292224', '1') for bit in bits]
-    # goodSizeCopy = copy[:size]
-    # array to string
-    # string = ''.join(goodSizeCopy)
     string = ''.join(copy)
-    # print(string)
     d = BitArray(bin=string)
 
     return d.hex[:size]
-
-
-def init_matrix(input):
-    bit_array = translateToBits(input)
-    # print(bit_array)
-
-    matrix = np.zeros((n, n, w))
-
-    for i in range(n):
-        for j in range(n):
-            for k in range(w):
-                matrix[i][j][k] = bit_array[(i * 5 + j) * w + k]
-    return matrix
 
 
 def ret_res(matrix):
@@ -171,15 +219,14 @@ def ret_res(matrix):
 def keccak_256(data):
 
     matrix = init_matrix(data)
+    # print(matrix)
 
     for round in range(rounds):
-        matrix_2 = routine_iota(routine_khi(routine_pi(
+        matrix = routine_iota(routine_khi(routine_pi(
             routine_rho(routine_teta(matrix)))), round)
 
-    res = ret_res(matrix_2)
-
+    res = ret_res(matrix)
     res = [str(int(i)) for i in res]
-
     # print(res)
     res = translateFromBits(res)
     return res
@@ -199,4 +246,4 @@ if __name__ == "__main__":
     with open(file, 'r') as f:
         data = f.read()
 
-    print(keccak_256(data))
+    keccak_256(data)
