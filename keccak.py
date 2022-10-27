@@ -75,25 +75,25 @@ def routine_teta(matrix):
                 temp = C + D + matrix[i][j][k] % 2
                 matrix[i][j][k] = temp
 
-    print(matrix)
+    # print(matrix)
     return matrix
 
 
-# def theta(array, w=64):
-#     # For each column, XOR the parity of two adjacent columns
-#     array_prime = array.copy()
-#     C, D = np.zeros([5, w], dtype=int), np.zeros([5, w], dtype=int)
-#     for x in range(5):
-#         for y in range(5):
-#             # C[x] is a lane, each entry represents the column parity
-#             C[x] ^= array[x][y]
-#     for x in range(5):
-#         D[x] = C[(x-1) % 5] ^ np.roll(C[(x+1) % 5], 1)  # D[x] is a placeholder
-#     for x in range(5):
-#         for y in range(5):
-#             array_prime[x][y] ^= D[x]  # For each lane, XOR the value of D[x]
-#     # print(array_prime)
-#     return array_prime
+def theta(array, w=64):
+    # For each column, XOR the parity of two adjacent columns
+    array_prime = array.copy()
+    C, D = np.zeros([5, w], dtype=int), np.zeros([5, w], dtype=int)
+    for x in range(5):
+        for y in range(5):
+            # C[x] is a lane, each entry represents the column parity
+            C[x] ^= array[x][y]
+    for x in range(5):
+        D[x] = C[(x-1) % 5] ^ np.roll(C[(x+1) % 5], 1)  # D[x] is a placeholder
+    for x in range(5):
+        for y in range(5):
+            array_prime[x][y] ^= D[x]  # For each lane, XOR the value of D[x]
+    # print(array_prime)
+    return array_prime
 
 
 def routine_rho(matrix):
@@ -111,6 +111,15 @@ def routine_rho(matrix):
     return matrix
 
 
+def rho(array, w=64):
+    # Circular shift each lane by a precalculated amount (given by the shifts array)
+    array_prime = array.copy()
+    for x in range(5):
+        for y in range(5):
+            array_prime[x][y] = np.roll(array[x][y], shifts[x][y])
+    return array_prime
+
+
 def routine_pi(matrix):
     """
     a[3i+2j][i] = a[i][j]
@@ -119,6 +128,15 @@ def routine_pi(matrix):
         for j in range(n):
             matrix[(3*i + 2*j) % 5][i] = matrix[i][j]
     return matrix
+
+
+def pi(array, w=64):
+    # 'Rotate' each slice according to a modular linear transformation
+    array_prime = array.copy()
+    for x in range(5):
+        for y in range(5):
+            array_prime[x][y] = array[((x) + (3 * y)) % 5][x]
+    return array_prime
 
 
 def routine_khi(matrix):
@@ -134,15 +152,45 @@ def routine_khi(matrix):
     return matrix
 
 
+def chi(array, w=64):
+    # Bitwise transformation of each row according to a nonlinear function
+    array_prime = np.zeros(array.shape, dtype=int)
+    for x in range(5):
+        for y in range(5):
+            array_prime[x][y] = array[x][y] ^ (
+                (array[(x + 1) % 5][y] ^ 1) & (array[(x + 2) % 5][y]))
+    return array_prime
+
+
+def hex_to_array(hexnum):
+    # Convert a hexstring to a 1-dimensional numpy array
+    bitstring = '{0:064b}'.format(hexnum)
+    bitstring = bitstring[-w:]
+    array = np.array([int(bitstring[i]) for i in range(w)])
+    array = np.flip(array)
+    return array
+
+
 def routine_iota(matrix, rounds):
     """
     a[0][0][2^m-1] est Xoré avec le bit numéroté m+7n d'une séquence LFSR de degré 8
     """
+
+    lsfr = hex_to_array(KeccakF1600RoundConstants[rounds])
     for m in range(l):
-        matrix[0][0][2**m-1] = matrix[0][0][2**m -
-                                            1] or KeccakF1600RoundConstants[rounds]
+        matrix[0][0][2**m -
+                     1] ^= lsfr[m + 7 * n]  # Xor the bit at position m+7n with the bit at position 2^m-1
 
     return matrix
+
+
+def iota(array, round_index, w=64):
+    # XOR each lane with a precalculated round constant
+    RC = hex_to_array(RCs[round_index], w)
+    RC = np.flip(RC)
+    array_prime = array.copy()
+    array_prime[0][0] ^= RC
+    return array_prime
 
 
 def translateToBits(text):
@@ -199,8 +247,8 @@ def init_matrix(input):
 
 
 def translateFromBits(bits):
-    copy = [bit.replace('9223372039002292224', '1') for bit in bits]
-    string = ''.join(copy)
+    # copy = [bit.replace('9223372039002292224', '1') for bit in bits]
+    string = ''.join(bits)
     d = BitArray(bin=string)
 
     return d.hex[:size]
@@ -216,6 +264,22 @@ def ret_res(matrix):
     return res
 
 
+def squeeze(array, bits=256):
+    # 'Squeezing' phase of the sponge construction yields the hash
+    hash = ''
+    for i in range(5):
+        for j in range(5):
+            lane = array[j][i]
+            lanestring = ''
+            for m in range(len(lane)):
+                lanestring += str(lane[m])
+            for n in range(0, len(lanestring), 8):
+                byte = lanestring[n:n+8]
+                byte = byte[::-1]  # Convert from Little-endian
+                hash += '{0:02x}'.format(int(byte, 2))
+    return hash[:int(bits/4)]
+
+
 def keccak_256(data):
 
     matrix = init_matrix(data)
@@ -225,10 +289,12 @@ def keccak_256(data):
         matrix = routine_iota(routine_khi(routine_pi(
             routine_rho(routine_teta(matrix)))), round)
 
-    res = ret_res(matrix)
-    res = [str(int(i)) for i in res]
+    # res = ret_res(matrix)
+    # res = [str(int(i)) for i in res]
     # print(res)
-    res = translateFromBits(res)
+    # res = translateFromBits(res)
+    res = squeeze(matrix)
+    print(res)
     return res
 
 
