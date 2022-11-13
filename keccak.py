@@ -19,6 +19,8 @@ import sys
 from bitstring import BitArray
 import os
 import numpy as np
+np.set_printoptions(threshold=sys.maxsize)
+
 
 # l = 6 car 64 bits
 l = 6
@@ -28,6 +30,7 @@ w = 2 ** l
 n = 5
 # rounds
 rounds = 12 + 2 * l
+rounds = 1
 # Constant for Iota
 KeccakF1600RoundConstants = [
     0x0000000000000001, 0x000000008000808B, 0x0000000000008082,
@@ -75,7 +78,7 @@ def routine_teta(matrix):
                 temp = C + D + matrix[i][j][k] % 2
                 matrix[i][j][k] = temp
 
-    # print(matrix)
+    print(matrix)
     return matrix
 
 
@@ -294,7 +297,7 @@ def keccak_256(data):
     # print(res)
     # res = translateFromBits(res)
     res = squeeze(matrix)
-    print(res)
+    # print(res)
     return res
 
 
