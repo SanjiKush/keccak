@@ -1,10 +1,24 @@
+# Keccak
+
+SHA3-256 Implem.
+
+Tests are verified with the official hashlib, https://docs.python.org/3/library/hashlib.html given by KeccakTeam
+
 Usage : 
+
+Linux users:
+
 ```bash
-python3 -m pip install requirements.txt
-python3 keccak.py <stringToHash>
+make install
+make test
 ```
 
-Return the hash of the text in the file
+Others:
 
+```bash
+python -m pip install requirements.txt
+python test.py
+python keccak.py <stringToHash>
+```
 
 Project in project.txt

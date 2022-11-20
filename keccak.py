@@ -219,7 +219,7 @@ class KeccakHash(object):
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
-        print("Usage: {} <string>".format(sys.argv[0]))
+        print("Usage: ./keccak.py <string>")
         sys.exit(1)
 
     res = KeccakHash(rate=b-w,).update(sys.argv[1].encode('utf-8')).hexdigest()
