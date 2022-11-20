@@ -14,6 +14,7 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+import sys
 from binascii import hexlify
 import numpy as np
 
@@ -50,7 +51,6 @@ def rol(x, s):
 
 
 class Keccak(object):
-    """The Keccak-F[1600] permutation."""
 
     def __init__(self):
         self.state = np.zeros(25, dtype=np.uint64)
@@ -64,13 +64,13 @@ class Keccak(object):
             for x in range(5):
                 bc[x] = 0
                 for y in range(0, 25, 5):
-                    bc[x] ^= state[x + y]
+                    bc[x] = np.bitwise_xor(bc[x], state[x + y])
 
             # Theta
             for x in range(5):
                 t = bc[(x + 4) % 5] ^ rol(bc[(x + 1) % 5], 1)
                 for y in range(0, 25, 5):
-                    state[y + x] ^= t
+                    state[y + x] = np.bitwise_xor(state[y + x], t)
 
             # Rho and pi
             t = state[1]
@@ -89,15 +89,6 @@ class Keccak(object):
             state[0] ^= KECCAK_ROUND_CTE[i]
         self.state = state
 
-    def __repr__(self):
-        state = self.state
-        lines = []
-        for x in range(0, 25, 5):
-            lines.append(
-                ' '.join('{:016x}'.format(state[x + y]).replace('0', '-')
-                         for y in range(5)))
-        return '\n'.join(lines)
-
 
 class KeccakHash(object):
 
@@ -111,13 +102,15 @@ class KeccakHash(object):
         self.direction = SPONGE_ABSORBING
 
     def absorb(self, b):
+        # b entrée en binaire
         todo = len(b)
         i = 0
         while todo > 0:
             cando = self.rate - self.i
             willabsorb = min(cando, todo)
-            self.buf[self.i:self.i + willabsorb] ^= \
-                np.frombuffer(b[i:i+willabsorb], dtype=np.uint8)
+            self.buf[self.i:self.i +
+                     willabsorb] ^= np.bitwise_xor(self.buf[self.i:self.i +
+                                                            willabsorb], np.frombuffer(b[i:i+willabsorb], dtype=np.uint8))
             self.i += willabsorb
             if self.i == self.rate:
                 self.permute()
@@ -150,6 +143,7 @@ class KeccakHash(object):
         self.buf[:] = 0
 
     def update(self, b):
+        # b entrée en binaire
         if self.direction == SPONGE_SQUEEZING:
             self.permute()
             self.direction == SPONGE_ABSORBING
@@ -164,12 +158,8 @@ class KeccakHash(object):
     def hexdigest(self):
         return hexlify(self.digest())
 
-    def __repr__(self):
-        return "KeccakHash(rate={}, dsbyte=0x{:02x})".format(self.rate, self.dsbyte)
-
 
 if __name__ == '__main__':
-    import sys
     if len(sys.argv) == 1:
         print("Usage: {} <string>".format(sys.argv[0]))
         sys.exit(1)

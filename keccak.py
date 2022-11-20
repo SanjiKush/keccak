@@ -14,305 +14,155 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-
-import sys
-from bitstring import BitArray
-import os
+from binascii import hexlify
 import numpy as np
-np.set_printoptions(threshold=sys.maxsize)
 
 
-# l = 6 car 64 bits
-l = 6
-# size
-w = 2 ** l
-# size of matrix
-n = 5
-# rounds
-rounds = 12 + 2 * l
-rounds = 1
-# Constant for Iota
-KeccakF1600RoundConstants = [
-    0x0000000000000001, 0x000000008000808B, 0x0000000000008082,
-    0x800000000000008B, 0x800000000000808A, 0x8000000000008089,
-    0x8000000080008000, 0x8000000000008003, 0x000000000000808B,
-    0x8000000000008002, 0x0000000080000001, 0x8000000000000080,
-    0x8000000080008081, 0x000000000000800A, 0x8000000000008009,
-    0x800000008000000A, 0x000000000000008A, 0x8000000080008081,
-    0x0000000000000088, 0x8000000000008080, 0x0000000080008009,
-    0x0000000080000001, 0x000000008000000A, 0x8000000080008008]
+RHO_CTE = [1,  3,  6, 10, 15, 21, 28, 36, 45, 55,  2,
+           14, 27, 41, 56,  8, 25, 43, 62, 18, 39, 61, 20, 44]
 
-# Une fois toutes les permutations effectuées, l’empreinte résultat est constituée des n premiers bits de l’état.
-size = 64
-# Capacity
-c = 512
+PI_CTE = [10,  7, 11, 17, 18, 3, 5, 16,  8, 21, 24,
+          4, 15, 23, 19, 13, 12, 2, 20, 14, 22,  9,  6, 1]
 
-# Block Size
-r = 1600 - c
+KECCAK_ROUND_CTE = np.array([
+    0x0000000000000001, 0x0000000000008082,
+    0x800000000000808a, 0x8000000080008000,
+    0x000000000000808b, 0x0000000080000001,
+    0x8000000080008081, 0x8000000000008009,
+    0x000000000000008a, 0x0000000000000088,
+    0x0000000080008009, 0x000000008000000a,
+    0x000000008000808b, 0x800000000000008b,
+    0x8000000000008089, 0x8000000000008003,
+    0x8000000000008002, 0x8000000000000080,
+    0x000000000000800a, 0x800000008000000a,
+    0x8000000080008081, 0x8000000000008080,
+    0x0000000080000001, 0x8000000080008008],
+    dtype=np.uint64)
+
+SPONGE_ABSORBING = 1
+
+SPONGE_SQUEEZING = 2
 
 
-def parity(n):
-    parity = 0
-    while n:
-        parity = ~parity
-        n = n & (n - 1)
-    return parity
+def rol(x, s):
+    """Rotate x left by s."""
+    return ((np.uint64(x) << np.uint64(s)) ^ (np.uint64(x) >> np.uint64(64 - s)))
 
 
-def routine_teta(matrix):
-    """
-    a[i][j][k] = a[i][j][k] OU parite(a[0..4][j-1][k]) OU parite(a[0..4][j+1][k-1])
-    """
-    for i in range(n):
-        for j in range(n):
-            for k in range(w):
-                # matrix[i][j][k] = matrix[i][j][k] ^ parity(
-                #     matrix[0][j-1][k]) ^ parity(matrix[0][j+1][k-1])
+class Keccak(object):
+    """The Keccak-F[1600] permutation."""
 
-                C = sum([matrix[(i-1) % 5][ji][k]
-                        for ji in range(5)]) % 2
-                # XOR=mod2 5 bit column "to the right"  and one position "to the front" of the original bit
-                D = sum([matrix[((i+1) % 5)][ji][(k-1) % 64]
-                        for ji in range(5)]) % 2
-                # XORing original bit with A and B
-                temp = C + D + matrix[i][j][k] % 2
-                matrix[i][j][k] = temp
+    def __init__(self):
+        self.state = np.zeros(25, dtype=np.uint64)
 
-    print(matrix)
-    return matrix
+    def Routines(self):
+        state = self.state
+        bc = np.zeros(5, dtype=np.uint64)
 
+        for i in range(24):
+            # Parity
+            for x in range(5):
+                bc[x] = 0
+                for y in range(0, 25, 5):
+                    bc[x] ^= state[x + y]
 
-def theta(array, w=64):
-    # For each column, XOR the parity of two adjacent columns
-    array_prime = array.copy()
-    C, D = np.zeros([5, w], dtype=int), np.zeros([5, w], dtype=int)
-    for x in range(5):
-        for y in range(5):
-            # C[x] is a lane, each entry represents the column parity
-            C[x] ^= array[x][y]
-    for x in range(5):
-        D[x] = C[(x-1) % 5] ^ np.roll(C[(x+1) % 5], 1)  # D[x] is a placeholder
-    for x in range(5):
-        for y in range(5):
-            array_prime[x][y] ^= D[x]  # For each lane, XOR the value of D[x]
-    # print(array_prime)
-    return array_prime
+            # Theta
+            for x in range(5):
+                t = bc[(x + 4) % 5] ^ rol(bc[(x + 1) % 5], 1)
+                for y in range(0, 25, 5):
+                    state[y + x] ^= t
 
+            # Rho and pi
+            t = state[1]
+            for x in range(24):
+                bc[0] = state[PI_CTE[x]]
+                state[PI_CTE[x]] = rol(t, RHO_CTE[x])
+                t = bc[0]
 
-def routine_rho(matrix):
-    """
-    a[i][j][k]=a[i][j][k − (t+1)(t+2)/2]
-    """
-    rhomatrix = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [
-        62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]]
-    rhom = np.array(rhomatrix, dtype=int)
-    # print(rhom)
-    for i in range(n):
-        for j in range(n):
-            for k in range(w):
-                matrix[i][j][k] = matrix[i][j][k - rhom[i][j]]
-    return matrix
+            for y in range(0, 25, 5):
+                for x in range(5):
+                    bc[x] = state[y + x]
+                for x in range(5):
+                    state[y + x] = bc[x] ^ ((~bc[(x + 1) % 5])
+                                            & bc[(x + 2) % 5])
+
+            state[0] ^= KECCAK_ROUND_CTE[i]
+        self.state = state
 
 
-def rho(array, w=64):
-    # Circular shift each lane by a precalculated amount (given by the shifts array)
-    array_prime = array.copy()
-    for x in range(5):
-        for y in range(5):
-            array_prime[x][y] = np.roll(array[x][y], shifts[x][y])
-    return array_prime
+class KeccakHash(object):
+
+    def __init__(self, b='', rate=None, dsbyte=None):
+        if rate < 0 or rate > 199:
+            raise Exception("Invalid rate.")
+        self.rate, self.dsbyte, self.i = rate, dsbyte, 0
+        self.k = Keccak()
+        self.buf = np.zeros(200, dtype=np.uint8)
+        self.absorb(b)
+        self.direction = SPONGE_ABSORBING
+
+    def absorb(self, b):
+        todo = len(b)
+        i = 0
+        while todo > 0:
+            cando = self.rate - self.i
+            willabsorb = min(cando, todo)
+            self.buf[self.i:self.i + willabsorb] ^= \
+                np.frombuffer(b[i:i+willabsorb], dtype=np.uint8)
+            self.i += willabsorb
+            if self.i == self.rate:
+                self.permute()
+            todo -= willabsorb
+            i += willabsorb
+
+    def squeeze(self, n):
+        tosqueeze = n
+        b = b''
+        while tosqueeze > 0:
+            cansqueeze = self.rate - self.i
+            willsqueeze = min(cansqueeze, tosqueeze)
+            b += self.k.state.view(dtype=np.uint8)[
+                self.i:self.i + willsqueeze].tobytes()
+            self.i += willsqueeze
+            if self.i == self.rate:
+                self.permute()
+            tosqueeze -= willsqueeze
+        return b
+
+    def pad(self):
+        self.buf[self.i] ^= self.dsbyte
+        self.buf[self.rate - 1] ^= 0x80
+        self.permute()
+
+    def permute(self):
+        self.k.state ^= self.buf.view(dtype=np.uint64)
+        self.k.Routines()
+        self.i = 0
+        self.buf[:] = 0
+
+    def update(self, b):
+        if self.direction == SPONGE_SQUEEZING:
+            self.permute()
+            self.direction == SPONGE_ABSORBING
+        self.absorb(b)
+        return self
+
+    def digest(self):
+        if self.direction == SPONGE_ABSORBING:
+            self.pad()
+        return self.squeeze((200 - self.rate) // 2)
+
+    def hexdigest(self):
+        return hexlify(self.digest())
 
 
-def routine_pi(matrix):
-    """
-    a[3i+2j][i] = a[i][j]
-    """
-    for i in range(n):
-        for j in range(n):
-            matrix[(3*i + 2*j) % 5][i] = matrix[i][j]
-    return matrix
-
-
-def pi(array, w=64):
-    # 'Rotate' each slice according to a modular linear transformation
-    array_prime = array.copy()
-    for x in range(5):
-        for y in range(5):
-            array_prime[x][y] = array[((x) + (3 * y)) % 5][x]
-    return array_prime
-
-
-def routine_khi(matrix):
-    """
-    a[i][j][k]=a[i][j][k] OR ¬(a[i][j+1][k]) & (a[i][j+2][k])
-    """
-    for i in range(n):
-        for j in range(n):
-            for k in range(w):
-                matrix[i][j][k] = (matrix[i][j][k]+(((matrix[(i + 1) % 5][j][k] + 1) %
-                                                     2) * (matrix[(i + 2) % 5][j][k]))) % 2
-
-    return matrix
-
-
-def chi(array, w=64):
-    # Bitwise transformation of each row according to a nonlinear function
-    array_prime = np.zeros(array.shape, dtype=int)
-    for x in range(5):
-        for y in range(5):
-            array_prime[x][y] = array[x][y] ^ (
-                (array[(x + 1) % 5][y] ^ 1) & (array[(x + 2) % 5][y]))
-    return array_prime
-
-
-def hex_to_array(hexnum):
-    # Convert a hexstring to a 1-dimensional numpy array
-    bitstring = '{0:064b}'.format(hexnum)
-    bitstring = bitstring[-w:]
-    array = np.array([int(bitstring[i]) for i in range(w)])
-    array = np.flip(array)
-    return array
-
-
-def routine_iota(matrix, rounds):
-    """
-    a[0][0][2^m-1] est Xoré avec le bit numéroté m+7n d'une séquence LFSR de degré 8
-    """
-
-    lsfr = hex_to_array(KeccakF1600RoundConstants[rounds])
-    for m in range(l):
-        matrix[0][0][2**m -
-                     1] ^= lsfr[m + 7 * n]  # Xor the bit at position m+7n with the bit at position 2^m-1
-
-    return matrix
-
-
-def iota(array, round_index, w=64):
-    # XOR each lane with a precalculated round constant
-    RC = hex_to_array(RCs[round_index], w)
-    RC = np.flip(RC)
-    array_prime = array.copy()
-    array_prime[0][0] ^= RC
-    return array_prime
-
-
-def translateToBits(text):
-    array = list(text)
-    bitarray = []
-    for char in array:
-        bits = bin(ord(char))[2:].zfill(8)
-        bits = bits[::-1]  # Convert to Little-endian
-        for bit in bits:
-            bitarray.append(int(bit))
-
-    res = ''.join([str(x) for x in bitarray])
-    res += '01100000'  # SHA3 Suffix
-    return res
-
-
-def padding(text):
-    """
-    To ensure the message can be evenly divided into r-bit blocks, padding is required. 
-    SHA-3 uses the pattern 10*1 in its padding function: 
-    a 1 bit, followed by zero or more 0 bits (maximum r − 1) and a final 1 bit. 
-    """
-    # Convert to bits
-    bitstr = translateToBits(text)
-
-    while len(bitstr) % (r-1) != 0:
-        bitstr += '0'
-    # Add 1
-    bitstr += '1'
-
-    return bitstr
-
-
-def init_matrix(input):
-    """
-    L’état interne de cette fonction sera vu comme une matrice de dimension 5×5×w.
-    a[i][j][k] sera le bit (i∗5+j)∗w+k de l’entrée. 
-    Le calcul des indices est effectué modulo 5 pour les deux premières dimensions, et modulo w pour la troisième
-    """
-
-    bit_str = padding(input)
-
-    state_array = np.zeros([5, 5, w], dtype=int)
-    for x in range(5):
-        for y in range(5):
-            for z in range(w):
-                if (w*(5*x+y)+z) < len(bit_str):
-                    state_array[y][x][z] = int(bit_str[w*(5*x+y)+z])
-
-    state = np.zeros(1600, dtype=int).reshape(n, n, w)
-    state = np.bitwise_xor(state, state_array)
-
-    return state
-
-
-def translateFromBits(bits):
-    # copy = [bit.replace('9223372039002292224', '1') for bit in bits]
-    string = ''.join(bits)
-    d = BitArray(bin=string)
-
-    return d.hex[:size]
-
-
-def ret_res(matrix):
-    res = np.zeros(1600)
-
-    for i in range(n):
-        for j in range(n):
-            for k in range(w):
-                res[64*(5*j+i)+k] = matrix[i][j][k]
-    return res
-
-
-def squeeze(array, bits=256):
-    # 'Squeezing' phase of the sponge construction yields the hash
-    hash = ''
-    for i in range(5):
-        for j in range(5):
-            lane = array[j][i]
-            lanestring = ''
-            for m in range(len(lane)):
-                lanestring += str(lane[m])
-            for n in range(0, len(lanestring), 8):
-                byte = lanestring[n:n+8]
-                byte = byte[::-1]  # Convert from Little-endian
-                hash += '{0:02x}'.format(int(byte, 2))
-    return hash[:int(bits/4)]
-
-
-def keccak_256(data):
-
-    matrix = init_matrix(data)
-    # print(matrix)
-
-    for round in range(rounds):
-        matrix = routine_iota(routine_khi(routine_pi(
-            routine_rho(routine_teta(matrix)))), round)
-
-    # res = ret_res(matrix)
-    # res = [str(int(i)) for i in res]
-    # print(res)
-    # res = translateFromBits(res)
-    res = squeeze(matrix)
-    # print(res)
-    return res
-
-
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python keccak.py <file>")
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) == 1:
+        print("Usage: {} <string>".format(sys.argv[0]))
         sys.exit(1)
 
-    if not os.path.isfile(sys.argv[1]):
-        print("Error: %s is not a file" % sys.argv[1])
-        print("Usage: python keccak.py <file>")
-        sys.exit(1)
-
-    file = sys.argv[1]
-    with open(file, 'r') as f:
-        data = f.read()
-
-    keccak_256(data)
+    # print keccak hash
+    res = KeccakHash(rate=200-(512 // 8),
+                     dsbyte=0x06).update(sys.argv[1].encode('utf-8')).hexdigest()
+    print(str(res).replace("b'", "").replace("'", ""))
